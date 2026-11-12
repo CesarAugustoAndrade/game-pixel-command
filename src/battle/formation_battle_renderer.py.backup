@@ -1,0 +1,359 @@
+"""
+Formation Battle Renderer
+Renders 4v4 battles with linear formations (2x2 grid per side).
+"""
+
+import pygame
+from typing import List, Optional, Dict, Tuple
+from src.entities.unit import Unit
+from src.battle.position_grid import FormationGrid
+from src.core.constants import *
+
+
+class FormationBattleRenderer:
+    """
+    Renders formation-based battles.
+    Left side: Player (4 units in 2x2)
+    Right side: Enemy (4 units in 2x2)
+    """
+
+    def __init__(self, screen: pygame.Surface, formation_grid: FormationGrid):
+        """
+        Initialize formation renderer.
+
+        Args:
+            screen: Pygame screen surface
+            formation_grid: Formation grid system
+        """
+        self.screen = screen
+        self.grid = formation_grid
+
+        # Card dimensions
+        self.card_width = 120
+        self.card_height = 140
+        self.card_spacing = 20
+
+        # Grid positions on screen
+        self.player_grid_center = (280, SCREEN_HEIGHT // 2)
+        self.enemy_grid_center = (SCREEN_WIDTH - 280, SCREEN_HEIGHT // 2)
+
+        # Colors
+        self.color_player = (100, 150, 255)  # Blue
+        self.color_enemy = (255, 100, 100)  # Red
+        self.color_selected = (255, 255, 100)  # Yellow
+        self.color_hover = (255, 255, 255)  # White
+        self.color_dead = (80, 80, 80)  # Gray
+
+        # Fonts
+        self.font_small = pygame.font.Font(None, 18)
+        self.font_medium = pygame.font.Font(None, 24)
+        self.font_large = pygame.font.Font(None, 48)
+
+    def get_card_position(self, row: int, col: int, side: str) -> Tuple[int, int]:
+        """
+        Get screen position for a card.
+
+        Args:
+            row: 0=front, 1=back
+            col: 0=left, 1=right
+            side: "player" or "enemy"
+
+        Returns:
+            (x, y) top-left corner of card
+        """
+        center = self.player_grid_center if side == "player" else self.enemy_grid_center
+
+        # Calculate offset from center
+        total_width = self.card_width * 2 + self.card_spacing
+        total_height = self.card_height * 2 + self.card_spacing
+
+        start_x = center[0] - total_width // 2
+        start_y = center[1] - total_height // 2
+
+        x = start_x + col * (self.card_width + self.card_spacing)
+        y = start_y + row * (self.card_height + self.card_spacing)
+
+        return (x, y)
+
+    def get_card_at_position(self, mouse_pos: Tuple[int, int]) -> Optional[Tuple[int, int, str]]:
+        """
+        Get which card (if any) is at mouse position.
+
+        Args:
+            mouse_pos: Mouse (x, y)
+
+        Returns:
+            (row, col, side) or None
+        """
+        for side in ["player", "enemy"]:
+            for row in range(2):
+                for col in range(2):
+                    card_x, card_y = self.get_card_position(row, col, side)
+                    card_rect = pygame.Rect(card_x, card_y, self.card_width, self.card_height)
+
+                    if card_rect.collidepoint(mouse_pos):
+                        return (row, col, side)
+
+        return None
+
+    def render_frame(self, units: Dict[str, List[Unit]], selected_unit: Optional[Unit] = None,
+                    hover_unit: Optional[Unit] = None, turn_info: Dict = None):
+        """
+        Render complete battle frame.
+
+        Args:
+            units: Dict with 'player' and 'enemy' lists
+            selected_unit: Currently selected unit
+            hover_unit: Unit under mouse
+            turn_info: Turn/phase information
+        """
+        # Clear screen
+        self.screen.fill((60, 70, 50))  # Dark green battlefield
+
+        # Render turn indicator
+        if turn_info:
+            self._render_turn_indicator(turn_info)
+
+        # Render both formations
+        self._render_formation("player", units.get("player", []), selected_unit, hover_unit)
+        self._render_formation("enemy", units.get("enemy", []), selected_unit, hover_unit)
+
+        # Render VS text
+        self._render_vs_text()
+
+        # Render selected unit info
+        if selected_unit:
+            self._render_selected_info(selected_unit)
+
+    def _render_formation(self, side: str, units: List[Unit], selected_unit: Optional[Unit],
+                         hover_unit: Optional[Unit]):
+        """Render a formation (4 unit cards in 2x2 grid)"""
+        for row in range(2):
+            for col in range(2):
+                # Find unit at this position
+                unit = self._get_unit_at_position(units, row, col, side)
+
+                card_x, card_y = self.get_card_position(row, col, side)
+
+                if unit:
+                    self._render_unit_card(unit, card_x, card_y, selected_unit, hover_unit)
+                else:
+                    self._render_empty_slot(card_x, card_y, side)
+
+    def _get_unit_at_position(self, units: List[Unit], row: int, col: int, side: str) -> Optional[Unit]:
+        """Find unit at specific grid position"""
+        for unit in units:
+            if (unit.position_component and
+                unit.position_component.row == row and
+                unit.position_component.col == col and
+                unit.position_component.side == side):
+                return unit
+        return None
+
+    def _render_unit_card(self, unit: Unit, x: int, y: int, selected_unit: Optional[Unit],
+                         hover_unit: Optional[Unit]):
+        """
+        Render a single unit card.
+
+        Card contains:
+        - Unit type icon/text
+        - Health bar
+        - Morale bar
+        - Stats preview
+        """
+        is_selected = (unit == selected_unit)
+        is_hover = (unit == hover_unit)
+        is_dead = (unit.stats_component and unit.stats_component.health <= 0)
+
+        # Determine border color
+        if is_selected:
+            border_color = self.color_selected
+            border_width = 4
+        elif is_hover:
+            border_color = self.color_hover
+            border_width = 3
+        else:
+            # Faction color
+            if unit.faction_component and unit.faction_component.faction == "player":
+                border_color = self.color_player
+            else:
+                border_color = self.color_enemy
+            border_width = 2
+
+        if is_dead:
+            border_color = self.color_dead
+
+        # Card background
+        bg_color = (40, 40, 40) if not is_dead else (30, 30, 30)
+        pygame.draw.rect(self.screen, bg_color, (x, y, self.card_width, self.card_height))
+        pygame.draw.rect(self.screen, border_color, (x, y, self.card_width, self.card_height), border_width)
+
+        if is_dead:
+            # Just show "DEAD" text
+            dead_text = self.font_medium.render("DEAD", True, (150, 150, 150))
+            text_rect = dead_text.get_rect(center=(x + self.card_width // 2, y + self.card_height // 2))
+            self.screen.blit(dead_text, text_rect)
+            return
+
+        # Unit type name
+        if unit.unit_component:
+            unit_name = unit.unit_component.unit_type.replace('_', ' ').title()
+            name_surf = self.font_small.render(unit_name, True, (255, 255, 255))
+            name_rect = name_surf.get_rect(center=(x + self.card_width // 2, y + 15))
+            self.screen.blit(name_surf, name_rect)
+
+        # Health bar
+        if unit.stats_component:
+            self._render_health_bar(x, y + 35, unit.stats_component)
+
+        # Morale bar
+        if unit.morale_component:
+            self._render_morale_bar(x, y + 55, unit.morale_component)
+
+        # Stats text
+        if unit.stats_component:
+            stats_text = f"ATK: {unit.stats_component.attack}  DEF: {unit.stats_component.defense}"
+            stats_surf = self.font_small.render(stats_text, True, (200, 200, 200))
+            self.screen.blit(stats_surf, (x + 5, y + 75))
+
+            hp_text = f"HP: {unit.stats_component.health}/{unit.stats_component.max_health}"
+            hp_surf = self.font_small.render(hp_text, True, (200, 200, 200))
+            self.screen.blit(hp_surf, (x + 5, y + 95))
+
+        # Unit count
+        if unit.unit_component:
+            count_text = f"Troops: {unit.unit_component.count}"
+            count_surf = self.font_small.render(count_text, True, (180, 180, 180))
+            self.screen.blit(count_surf, (x + 5, y + 115))
+
+    def _render_empty_slot(self, x: int, y: int, side: str):
+        """Render an empty slot (dashed outline)"""
+        border_color = self.color_player if side == "player" else self.color_enemy
+
+        # Dashed rectangle
+        dash_length = 10
+        for i in range(0, self.card_width, dash_length * 2):
+            pygame.draw.line(self.screen, border_color, (x + i, y), (x + i + dash_length, y), 1)
+            pygame.draw.line(self.screen, border_color, (x + i, y + self.card_height),
+                           (x + i + dash_length, y + self.card_height), 1)
+
+        for i in range(0, self.card_height, dash_length * 2):
+            pygame.draw.line(self.screen, border_color, (x, y + i), (x, y + i + dash_length), 1)
+            pygame.draw.line(self.screen, border_color, (x + self.card_width, y + i),
+                           (x + self.card_width, y + i + dash_length), 1)
+
+    def _render_health_bar(self, x: int, y: int, stats):
+        """Render health bar"""
+        bar_width = self.card_width - 10
+        bar_height = 8
+        bar_x = x + 5
+
+        # Background
+        pygame.draw.rect(self.screen, (60, 60, 60), (bar_x, y, bar_width, bar_height))
+
+        # Health fill
+        health_pct = stats.health / stats.max_health
+        fill_width = int(bar_width * health_pct)
+
+        if health_pct > 0.6:
+            health_color = (60, 180, 80)  # Green
+        elif health_pct > 0.3:
+            health_color = (220, 200, 60)  # Yellow
+        else:
+            health_color = (200, 60, 60)  # Red
+
+        if fill_width > 0:
+            pygame.draw.rect(self.screen, health_color, (bar_x, y, fill_width, bar_height))
+
+    def _render_morale_bar(self, x: int, y: int, morale):
+        """Render morale bar"""
+        bar_width = self.card_width - 10
+        bar_height = 6
+        bar_x = x + 5
+
+        # Background
+        pygame.draw.rect(self.screen, (40, 40, 40), (bar_x, y, bar_width, bar_height))
+
+        # Morale fill
+        morale_pct = morale.current / 100.0
+        fill_width = int(bar_width * morale_pct)
+
+        morale_color = (80, 140, 220)  # Blue
+
+        if fill_width > 0:
+            pygame.draw.rect(self.screen, morale_color, (bar_x, y, fill_width, bar_height))
+
+    def _render_turn_indicator(self, turn_info: Dict):
+        """Render turn indicator at top"""
+        phase = turn_info.get('phase', 'BATTLE')
+        turn_num = turn_info.get('turn', 1)
+
+        turn_text = f"{phase} - Turn {turn_num}"
+        turn_color = self.color_player if "PLAYER" in phase.upper() else self.color_enemy
+
+        text_surf = self.font_large.render(turn_text, True, turn_color)
+        text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, 40))
+
+        # Background
+        bg_rect = text_rect.inflate(20, 10)
+        pygame.draw.rect(self.screen, (20, 20, 20), bg_rect)
+        pygame.draw.rect(self.screen, turn_color, bg_rect, 2)
+
+        self.screen.blit(text_surf, text_rect)
+
+    def _render_vs_text(self):
+        """Render VS text in center"""
+        vs_text = self.font_large.render("VS", True, (255, 255, 100))
+        vs_rect = vs_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        self.screen.blit(vs_text, vs_rect)
+
+    def _render_selected_info(self, unit: Unit):
+        """Render detailed info panel for selected unit"""
+        panel_x = 20
+        panel_y = SCREEN_HEIGHT - 150
+        panel_width = 300
+        panel_height = 130
+
+        # Panel background
+        pygame.draw.rect(self.screen, (30, 30, 30, 220),
+                        (panel_x, panel_y, panel_width, panel_height))
+        pygame.draw.rect(self.screen, self.color_selected,
+                        (panel_x, panel_y, panel_width, panel_height), 2)
+
+        # Unit name
+        if unit.unit_component:
+            unit_name = unit.unit_component.unit_type.replace('_', ' ').title()
+            name_surf = self.font_medium.render(unit_name, True, (255, 255, 255))
+            self.screen.blit(name_surf, (panel_x + 10, panel_y + 10))
+
+        # Detailed stats
+        y_offset = panel_y + 40
+        if unit.stats_component:
+            stats = [
+                f"HP: {unit.stats_component.health}/{unit.stats_component.max_health}",
+                f"Attack: {unit.stats_component.attack}  Defense: {unit.stats_component.defense}",
+                f"Armor: {unit.stats_component.armor}  Damage: {unit.stats_component.damage_min}-{unit.stats_component.damage_max}",
+            ]
+
+            if unit.morale_component:
+                stats.append(f"Morale: {unit.morale_component.current}/100")
+
+            for stat_text in stats:
+                stat_surf = self.font_small.render(stat_text, True, (200, 200, 200))
+                self.screen.blit(stat_surf, (panel_x + 10, y_offset))
+                y_offset += 20
+
+    def render_victory_banner(self, victor: str):
+        """Render victory/defeat banner"""
+        banner_text = "VICTORY!" if victor == "player" else "DEFEAT!"
+        banner_color = (255, 215, 0) if victor == "player" else (200, 60, 60)
+
+        text_surf = self.font_large.render(banner_text, True, banner_color)
+        text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+
+        # Background
+        bg_rect = text_rect.inflate(60, 40)
+        pygame.draw.rect(self.screen, (0, 0, 0, 200), bg_rect)
+        pygame.draw.rect(self.screen, banner_color, bg_rect, 4)
+
+        self.screen.blit(text_surf, text_rect)

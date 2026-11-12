@@ -1,0 +1,41 @@
+{
+  "display": {
+    "width": 1280,
+    "height": 720,
+    "fullscreen": false,
+    "vsync": true,
+    "fps": 60
+  },
+  "audio": {
+    "master_volume": 0.8,
+    "music_volume": 0.6,
+    "sfx_volume": 0.7,
+    "enabled": true
+  },
+  "gameplay": {
+    "difficulty": "normal",
+    "tutorial_enabled": true,
+    "autosave": true,
+    "autosave_interval": 300
+  },
+  "battle": {
+    "grid_width": 20,
+    "grid_height": 15,
+    "hex_size": 32,
+    "animation_speed": 1.0,
+    "show_movement_range": true,
+    "show_attack_range": true
+  },
+  "controls": {
+    "mouse_edge_scroll": true,
+    "keyboard_scroll_speed": 10,
+    "camera_drag_button": 2
+  },
+  "debug": {
+    "enabled": false,
+    "show_fps": true,
+    "show_grid": true,
+    "show_pathfinding": false,
+    "god_mode": false
+  }
+}

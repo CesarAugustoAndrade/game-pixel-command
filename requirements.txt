@@ -1,0 +1,17 @@
+# Classical Army Roguelite Dependencies
+
+# Core game framework
+pygame==2.5.2
+
+# Pixel art and sprite generation
+Pillow>=10.0.0  # For procedural sprite generation
+
+# Optional dependencies for enhanced features
+# numpy==1.24.0  # Uncomment for advanced math operations
+# noise==1.2.2   # Uncomment for better procedural generation
+
+# Development dependencies (optional)
+# pytest==7.4.0  # For unit testing
+# pytest-cov==4.1.0  # For code coverage
+# black==23.7.0  # Code formatter
+# pylint==2.17.5  # Code linter
